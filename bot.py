@@ -21,7 +21,7 @@ from database import (
     mark_discount_as_used,
     is_user_admin
 )
-from profile import show_profile, deposit_balance, get_profile_keyboard, show_referral_program
+from profile import show_profile, deposit_balance, get_profile_keyboard, show_referral_program,handle_exchange_referral_balance
 from messages import get_welcome_message, get_profile_text, get_return_to_main_message, get_subscription_info_text
 import aiohttp
 import asyncio

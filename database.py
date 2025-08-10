@@ -10,14 +10,18 @@ def dict_factory(cursor, row):
     return {col[0]: row[idx] for idx, col in enumerate(cursor.description)}
 
 def init_db():
-    # Проверяем, существует ли файл базы данных
-    db_exists = os.path.exists(DATABASE_NAME)
-    
+    """Инициализирует базу данных и создает все необходимые таблицы"""
     with sqlite3.connect(DATABASE_NAME) as conn:
-        conn.row_factory = dict_factory
         cursor = conn.cursor()
         
-        # Создаем таблицу пользователей, если не существует
+        # Проверяем существование таблицы users
+        cursor.execute("""
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name='users'
+        """)
+        users_table_exists = cursor.fetchone() is not None
+        
+        # Создаем таблицу users со всеми необходимыми колонками
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
@@ -33,96 +37,87 @@ def init_db():
             )
         """)
         
-        # Проверяем, нужно ли добавить столбец referral_balance
-        # Временно отключаем dict_factory для получения корректных результатов PRAGMA
-        conn.row_factory = None  # Отключаем dict_factory для этого запроса
-        cursor.execute("PRAGMA table_info(users)")
-        columns_info = cursor.fetchall()
-        conn.row_factory = dict_factory  # Возвращаем dict_factory
-        
-        # Если таблица существует и не пустая, проверяем наличие столбца
-        if columns_info and len(columns_info[0]) > 1:
-            column_names = [column[1] for column in columns_info]
-            if 'referral_balance' not in column_names:
+        # Если таблица уже существовала, проверяем наличие колонок
+        if users_table_exists:
+            # Проверяем наличие колонки referral_balance
+            cursor.execute("PRAGMA table_info(users)")
+            columns = [column[1] for column in cursor.fetchall()]
+            
+            if 'referral_balance' not in columns:
                 try:
                     cursor.execute("ALTER TABLE users ADD COLUMN referral_balance INTEGER DEFAULT 0")
                 except sqlite3.OperationalError:
-                    pass
+                    pass  # Колонка уже существует
         
-        # Остальной код функции остается без изменений...
-        # Создаем таблицу логов сообщений
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS message_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                role TEXT,
-                message TEXT,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
+        # Создаем остальные таблицы
+        tables = {
+            'message_logs': """
+                CREATE TABLE IF NOT EXISTS message_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    role TEXT,
+                    message TEXT,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """,
+            'admins': """
+                CREATE TABLE IF NOT EXISTS admins (
+                    user_id INTEGER PRIMARY KEY,
+                    added_by INTEGER,
+                    added_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """,
+            'discount_codes': """
+                CREATE TABLE IF NOT EXISTS discount_codes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    code TEXT UNIQUE NOT NULL,
+                    discount_percent INTEGER NOT NULL,
+                    max_uses INTEGER NOT NULL,
+                    used_count INTEGER DEFAULT 0,
+                    created_by INTEGER NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    is_active BOOLEAN DEFAULT 1
+                )
+            """,
+            'user_discounts': """
+                CREATE TABLE IF NOT EXISTS user_discounts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    discount_code TEXT NOT NULL,
+                    applied_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    used BOOLEAN DEFAULT 0,
+                    FOREIGN KEY (user_id) REFERENCES users (user_id)
+                )
+            """,
+            'referrals': """
+                CREATE TABLE IF NOT EXISTS referrals (
+                    user_id INTEGER PRIMARY KEY,
+                    referrer_id INTEGER,
+                    registration_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users (user_id),
+                    FOREIGN KEY (referrer_id) REFERENCES users (user_id)
+                )
+            """,
+            'referral_payments': """
+                CREATE TABLE IF NOT EXISTS referral_payments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    referrer_id INTEGER NOT NULL,
+                    amount REAL NOT NULL,
+                    level INTEGER NOT NULL,
+                    payment_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    subscription_type TEXT,
+                    FOREIGN KEY (user_id) REFERENCES users (user_id),
+                    FOREIGN KEY (referrer_id) REFERENCES users (user_id)
+                )
+            """
+        }
         
-        # Создаем таблицу администраторов
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS admins (
-                user_id INTEGER PRIMARY KEY,
-                added_by INTEGER,
-                added_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
+        for table_name, create_sql in tables.items():
+            cursor.execute(create_sql)
         
-        # Создаем таблицу скидочных кодов
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS discount_codes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                code TEXT UNIQUE NOT NULL,
-                discount_percent INTEGER NOT NULL,
-                max_uses INTEGER NOT NULL,
-                used_count INTEGER DEFAULT 0,
-                created_by INTEGER NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                is_active BOOLEAN DEFAULT 1
-            )
-        """)
-        
-        # Создаем таблицу пользовательских скидок
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS user_discounts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                discount_code TEXT NOT NULL,
-                applied_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                used BOOLEAN DEFAULT 0,
-                FOREIGN KEY (user_id) REFERENCES users (user_id)
-            )
-        """)
-        
-        # Создаем таблицы для реферальной системы
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS referrals (
-                user_id INTEGER PRIMARY KEY,
-                referrer_id INTEGER,
-                registration_date DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users (user_id),
-                FOREIGN KEY (referrer_id) REFERENCES users (user_id)
-            )
-        """)
-        
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS referral_payments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                referrer_id INTEGER NOT NULL,
-                amount REAL NOT NULL,
-                level INTEGER NOT NULL,
-                payment_date DATETIME DEFAULT CURRENT_TIMESTAMP,
-                subscription_type TEXT,
-                FOREIGN KEY (user_id) REFERENCES users (user_id),
-                FOREIGN KEY (referrer_id) REFERENCES users (user_id)
-            )
-        """)
-        
-        # Если база данных только что создана, добавляем root админа
-        if not db_exists and ROOT_ADMIN_ID:
+        # Добавляем root админа, если база только что создана
+        if not users_table_exists and ROOT_ADMIN_ID:
             try:
                 cursor.execute(
                     "INSERT OR IGNORE INTO admins (user_id, added_by) VALUES (?, ?)",

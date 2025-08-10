@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from database import update_purchase_balance, update_referral_balance
+import database
 from messages import get_subscription_menu_text, get_profile_text, get_subscription_info_text
 from profile import get_profile_keyboard
 
@@ -93,6 +93,7 @@ async def handle_subscription_selection(callback: CallbackQuery):
             return
         
         # Получаем информацию о пользователе
+        from database import get_user, get_user_active_discount, mark_discount_as_used, update_purchase_balance, update_subscription
         user = get_user(user_id)
         if not user:
             await callback.answer("Пользователь не найден", show_alert=True)
@@ -176,7 +177,7 @@ async def handle_subscription_selection(callback: CallbackQuery):
             await callback.answer("Ошибка при оформлении подписки. Попробуйте позже.", show_alert=True)
         except:
             pass
-        
+
 def get_subscription_name(sub_type: str) -> str:
     names = {
         'free': 'Zenith Spark',
