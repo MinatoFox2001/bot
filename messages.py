@@ -266,7 +266,7 @@ def get_referral_message(user_id: int) -> str:
     return (
         "👥 <b>Реферальная программа</b>\n\n"
         f"🔗 Ваша реферальная ссылка:\n"
-        f"<code>https://t.me/your_bot?start=ref{user_id}</code>\n\n"
+        f"<code>https://t.me/zenith_ii_bot?start=ref{user_id}</code>\n\n"
         f"📊 Статистика:\n"
         f"👥 Всего рефералов: {stats['total_referrals']}\n"
         f"💎 Активных рефералов: {stats['active_referrals']}\n"
