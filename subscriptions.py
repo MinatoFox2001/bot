@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 import database
 from messages import get_subscription_menu_text, get_profile_text, get_subscription_info_text
-from profile import get_profile_keyboard
+from profile import get_profile_keyboard,show_referral_program
 
 PRICES = {
     'tier1': 300,
@@ -63,6 +63,8 @@ def get_subscriptions_keyboard(user_id: int) -> InlineKeyboardMarkup:
         buttons.append([InlineKeyboardButton(text="Zenith Nova - 500₽", callback_data="sub_tier2")])
         buttons.append([InlineKeyboardButton(text="Zenith Eclipse - 700₽", callback_data="sub_tier3")])
     
+    # Добавляем кнопку реферальной программы
+    buttons.append([InlineKeyboardButton(text="👥 Реферальная программа", callback_data="referral")])
     buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_profile")])
     
     return InlineKeyboardMarkup(inline_keyboard=buttons)

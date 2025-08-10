@@ -261,9 +261,15 @@ def get_return_to_main_message():
 
 def get_referral_message(user_id: int) -> str:
     """Возвращает сообщение с реферальной ссылкой и статистикой"""
-    from database import get_referral_stats
+    from database import get_referral_stats, get_user
     
     stats = get_referral_stats(user_id)
+    user = get_user(user_id)
+    referral_balance = user.get('referral_balance', 0) if user else 0
+    
+    withdraw_button = ""
+    if referral_balance >= 0:
+        withdraw_button = "\n\n💸 <b>Доступен вывод средств!</b>\nНажмите кнопку ниже для вывода"
     
     return (
         "👥 <b>Реферальная программа</b>\n\n"
@@ -272,7 +278,8 @@ def get_referral_message(user_id: int) -> str:
         f"📊 Статистика:\n"
         f"👥 Всего рефералов: {stats['total_referrals']}\n"
         f"💎 Активных рефералов: {stats['active_referrals']}\n"
-        f"💰 Всего заработано: {stats['total_earned']:.2f} руб.\n\n"
+        f"💰 Всего заработано: {stats['total_earned']:.2f} руб.\n"
+        f"💸 Доступно к выводу: {referral_balance} руб.{withdraw_button}\n\n"
         "💸 <b>Как это работает?</b>\n"
         "1. Вы приглашаете друзей по своей ссылке\n"
         "2. Когда они покупают подписку, вы получаете:\n"

@@ -793,6 +793,80 @@ async def handle_referral_stats(callback: CallbackQuery):
     await callback.message.edit_text(stats_text, reply_markup=keyboard)
     await callback.answer()
 
+async def handle_referral_withdrawal(callback: CallbackQuery):
+    """Обработчик вывода реферальных средств"""
+    from database import get_user
+    
+    user_id = callback.from_user.id
+    user = get_user(user_id)
+    
+    if not user:
+        await callback.answer("Пользователь не найден", show_alert=True)
+        return
+    
+    referral_balance = user.get('referral_balance', 0)
+    
+    if referral_balance < 500:  # Минимальная сумма для вывода
+        await callback.answer("Минимальная сумма для вывода: 500 руб.", show_alert=True)
+        return
+    
+    # Установим состояние ожидания ввода суммы
+    from state import admin_states
+    admin_states[user_id] = 'waiting_for_withdrawal_amount'
+    
+    await callback.message.edit_text(
+        f"Введите сумму для вывода (максимум: {referral_balance} руб.):\n"
+        f"Минимальная сумма: 500 руб.\n\n"
+        f"Или введите 'cancel' для отмены.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="referral")]
+        ])
+    )
+    await callback.answer()
+
+async def handle_withdrawal_request(message: Message):
+    """Обработчик команды для подтверждения вывода средств"""
+    if not is_user_admin(message.from_user.id):
+        await message.answer("❌ У вас нет прав администратора!")
+        return
+    
+    try:
+        parts = message.text.split()
+        if len(parts) < 4:
+            await message.answer(
+                "❌ Неверный формат команды. Используйте: /withdraw [ID_пользователя] [сумма] [комментарий]\n"
+                "Пример: /withdraw 123456789 500 Обработано"
+            )
+            return
+        
+        user_id = int(parts[1])
+        amount = float(parts[2])
+        comment = " ".join(parts[3:]) if len(parts) > 3 else "Обработано"
+        
+        # Здесь можно добавить логику для реальной отправки средств
+        # Например, обновление статуса заявки в БД
+        
+        # Для примера просто отправляем уведомление пользователю
+        try:
+            from shared import bot
+            await bot.send_message(
+                chat_id=user_id,
+                text=f"✅ Ваша заявка на вывод средств в размере {amount} руб. обработана!\n"
+                     f"Комментарий: {comment}\n\n"
+                     f"Средства поступят в течение 3 рабочих дней."
+            )
+            await message.answer(f"✅ Уведомление отправлено пользователю {user_id}")
+        except Exception as e:
+            await message.answer(f"⚠️ Заявка обработана, но не удалось уведомить пользователя: {e}")
+            
+    except ValueError:
+        await message.answer("❌ Неверный формат ID или суммы")
+    except Exception as e:
+        await message.answer(f"❌ Ошибка: {str(e)}")
+
+# И зарегистрируйте обработчик в register_admin_handlers():
+# dp.message.register(handle_withdrawal_request, Command("withdraw"))
+
 def register_admin_handlers():
     # Регистрируем обработчики команд первыми
     dp.message.register(handle_admin_command, Command("admin"))

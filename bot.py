@@ -21,7 +21,7 @@ from database import (
     mark_discount_as_used,
     is_user_admin
 )
-from profile import show_profile, deposit_balance, get_profile_keyboard, show_referral_program,handle_exchange_referral_balance
+from profile import show_profile, deposit_balance, get_profile_keyboard, show_referral_program,handle_exchange_referral_balance,process_withdrawal_amount, handle_referral_withdrawal_request
 from messages import get_welcome_message, get_profile_text, get_return_to_main_message, get_subscription_info_text
 import aiohttp
 import asyncio
@@ -251,6 +251,23 @@ async def handle_profile_command(message: Message):
 async def handle_message(message: Message):
     chat_id = message.chat.id
     user_id = message.from_user.id
+    
+    # Проверяем, ждет ли бот ввода суммы для вывода
+    from state import admin_states
+    if user_id in admin_states and admin_states[user_id] == 'waiting_for_withdrawal_amount':
+        if message.text.lower() == 'cancel':
+            # Отмена операции
+            del admin_states[user_id]
+            from profile import show_referral_program
+            # Здесь нужно вернуть пользователя в реферальную программу
+            
+            # Для простоты просто покажем сообщение
+            await message.answer("Операция отменена")
+            return
+        
+        # Обработка ввода суммы
+        await process_withdrawal_amount(message)
+        return
     
     # Если это команда, игнорируем
     if message.text.startswith('/'):
@@ -826,9 +843,15 @@ async def handle_other_callbacks(callback: CallbackQuery):
         # Проверим, начинается ли с sub_
         if callback.data.startswith("sub_"):
             print(f"Обнаружена подписка: {callback.data}")
-            # Попробуем обработать здесь
-            from subscriptions import handle_subscription_selection
             return await handle_subscription_selection(callback)
+        # Добавляем обработку вывода средств
+        elif callback.data == "referral_withdrawal":
+            from profile import handle_referral_withdrawal_request
+            return await handle_referral_withdrawal_request(callback)
+        # Добавляем обработку обмена баланса
+        elif callback.data == "exchange_referral_balance":
+            from profile import handle_exchange_referral_balance
+            return await handle_exchange_referral_balance(callback)
             
         await callback.answer("Действие не распознано")
     except Exception as e:
@@ -848,10 +871,7 @@ def register_handlers():
     # Обработчик текстовых сообщений
     dp.message.register(handle_message, F.text)
     
-    # Общий обработчик инлайн кнопок
-    dp.callback_query.register(handle_inline_callback)
-    
-    # Специфические обработчики кнопок
+    # Сначала регистрируем специфические обработчики
     dp.callback_query.register(handle_modes_callback, F.data == "modes")
     dp.callback_query.register(handle_profile_callback, F.data == "profile")
     dp.callback_query.register(deposit_balance, F.data == "deposit")
@@ -862,7 +882,16 @@ def register_handlers():
     dp.callback_query.register(handle_back_to_profile, F.data == "back_to_profile")
     dp.callback_query.register(handle_admin_panel_callback, F.data == "admin_panel")
     dp.callback_query.register(show_referral_program, F.data == "referral")
+    
+    # Добавляем обработчики реферальных функций
     dp.callback_query.register(handle_exchange_referral_balance, F.data == "exchange_referral_balance")
+    dp.callback_query.register(handle_referral_withdrawal_request, F.data == "referral_withdrawal")
+    
+    # Обработчик текстовых сообщений для ввода суммы вывода
+    dp.message.register(process_withdrawal_amount, F.text)
+    
+    # В конце регистрируем общий обработчик инлайн кнопок (как запасной вариант)
+    dp.callback_query.register(handle_inline_callback)
 
 async def main():
     init_db()
