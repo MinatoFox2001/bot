@@ -181,7 +181,8 @@ async def handle_user_info(message: Message, user_id: int):
         f"🆔 ID: {user_info['user_id']}\n"
         f"👤 Username: @{user_info['username']}\n"
         f"📛 Имя: {user_info['full_name']}\n"
-        f"💰 Баланс: {user_info['balance']} руб.\n"
+        f"💰 Баланс для покупок: {user_info['balance']} руб.\n"
+        f"💸 Реферальный баланс: {user_info.get('referral_balance', 0)} руб.\n"
         f"📶 Подписка: {subscription_name}"
     )
     

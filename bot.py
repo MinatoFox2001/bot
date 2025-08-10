@@ -21,7 +21,7 @@ from database import (
     mark_discount_as_used,
     is_user_admin
 )
-from profile import show_profile, deposit_balance, get_profile_keyboard,show_referral_program
+from profile import show_profile, deposit_balance, get_profile_keyboard, show_referral_program
 from messages import get_welcome_message, get_profile_text, get_return_to_main_message, get_subscription_info_text
 import aiohttp
 import asyncio
@@ -411,32 +411,10 @@ async def handle_profile_callback(callback: CallbackQuery):
         chat_id = callback.message.chat.id
         user_id = callback.from_user.id
         
-        if not user_id:
-            await callback.answer("Ошибка: user_id не определен")
-            return
-
+        # После пополнения баланса проверим состояние подписки
         user = get_user(user_id)
         if not user:
-            # Пытаемся отредактировать сообщение
-            try:
-                await callback.message.edit_text(
-                    "❌ Профиль не найден. Пожалуйста, запустите бота командой /start",
-                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")]
-                    ])
-                )
-            except Exception:
-                # Если не удалось отредактировать, отправляем новое сообщение
-                await callback.message.answer(
-                    "❌ Профиль не найден. Пожалуйста, запустите бота командой /start",
-                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")]
-                    ])
-                )
-                try:
-                    await callback.message.delete()
-                except:
-                    pass
+            # код обработки отсутствующего пользователя
             return
 
         # Получаем текст профиля и подписки
@@ -448,7 +426,7 @@ async def handle_profile_callback(callback: CallbackQuery):
             print(f"Ошибка формирования текста профиля: {str(e)}")
             full_text = "❌ Не удалось загрузить данные профиля"
 
-        # Получаем клавиатуру
+        # Получаем клавиатуру с актуальными данными
         try:
             keyboard = get_profile_keyboard(user_id)
         except Exception as e:
@@ -457,29 +435,16 @@ async def handle_profile_callback(callback: CallbackQuery):
                 [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")]
             ])
 
-        # Пытаемся обновить сообщение
+        # Обновляем сообщение
         try:
             await callback.message.edit_text(
                 text=full_text,
                 reply_markup=keyboard
             )
-            # Сохраняем ID сообщения
             profile_message_ids[user_id] = callback.message.message_id
         except Exception as e:
             print(f"Не удалось отредактировать сообщение: {e}")
-            # Если не удалось редактировать, отправляем новое сообщение
-            try:
-                new_msg = await callback.message.answer(
-                    text=full_text,
-                    reply_markup=keyboard
-                )
-                # Сохраняем ID нового сообщения
-                profile_message_ids[user_id] = new_msg.message_id
-                # Удаляем старое сообщение
-                await callback.message.delete()
-            except Exception as delete_e:
-                print(f"Ошибка при отправке нового сообщения: {delete_e}")
-                pass
+
     except Exception as e:
         print(f"Критическая ошибка в handle_profile_callback: {str(e)}")
         await callback.answer("⚠️ Произошла ошибка", show_alert=True)
@@ -752,8 +717,6 @@ async def handle_inline_callback(callback: CallbackQuery):
         try:
             # Определяем новый текст и клавиатуру в зависимости от callback.data
             if callback.data == "profile":
-                from messages import get_profile_text
-                from profile import get_profile_keyboard
                 user = get_user(user_id)
                 new_text = get_profile_text(user) if user else "❌ Профиль не найден"
                 new_keyboard = get_profile_keyboard(user_id)
@@ -761,7 +724,6 @@ async def handle_inline_callback(callback: CallbackQuery):
                 new_text = "Выберите режим работы:"
                 new_keyboard = get_models_keyboard()
             elif callback.data == "back_to_main":
-                from messages import get_welcome_message
                 new_text = get_welcome_message(user_id)
                 new_keyboard = get_main_keyboard(user_id)
             elif callback.data == "admin_panel":
@@ -788,45 +750,93 @@ async def handle_inline_callback(callback: CallbackQuery):
                 return await handle_other_callbacks(callback)
             
             # Редактируем сообщение
-            await bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=last_msg.message_id,
-                text=new_text,
-                reply_markup=new_keyboard
-            )
+            try:
+                current_text = last_msg.text if hasattr(last_msg, 'text') else ""
+                if current_text != new_text:
+                    await bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=last_msg.message_id,
+                        text=new_text,
+                        reply_markup=new_keyboard
+                    )
+                else:
+                    # Если текст не изменился, обновляем только клавиатуру
+                    await bot.edit_message_reply_markup(
+                        chat_id=chat_id,
+                        message_id=last_msg.message_id,
+                        reply_markup=new_keyboard
+                    )
+            except Exception as e:
+                print(f"Не удалось отредактировать сообщение: {e}")
+                # Если не удалось отредактировать, отправляем новое сообщение
+                try:
+                    await last_msg.delete()
+                except:
+                    pass
+                new_msg = await callback.message.answer(
+                    text=new_text,
+                    reply_markup=new_keyboard
+                )
+                message_history[chat_id]['bot_msgs'].append(new_msg)
+                last_bot_messages[chat_id] = new_msg
+            
             await callback.answer()
             return
         except Exception as e:
             print(f"Не удалось отредактировать сообщение: {e}")
     
     # Если не удалось редактировать, вызываем соответствующий обработчик
-    if callback.data == "profile":
-        await handle_profile_callback(callback)
-    elif callback.data == "modes":
-        await handle_modes_callback(callback)
-    elif callback.data == "back_to_main":
-        await handle_back_to_main(callback)
-    elif callback.data == "admin_panel":
-        from admin import handle_admin_panel_callback
-        await handle_admin_panel_callback(callback)
-    elif callback.data == "subscriptions":
-        await show_subscriptions_menu(callback)
-    elif callback.data == "deposit":
-        await deposit_balance(callback)
-    elif callback.data.startswith("mode_"):
-        await handle_mode_selection(callback)
-    elif callback.data == "back_to_profile":
-        await handle_back_to_profile(callback)
-    elif callback.data == "referral":
-        from profile import show_referral_program
-        await show_referral_program(callback)
-    else:
-        await handle_other_callbacks(callback)
+    try:
+        if callback.data == "profile":
+            await handle_profile_callback(callback)
+        elif callback.data == "modes":
+            await handle_modes_callback(callback)
+        elif callback.data == "back_to_main":
+            await handle_back_to_main(callback)
+        elif callback.data == "admin_panel":
+            from admin import handle_admin_panel_callback
+            await handle_admin_panel_callback(callback)
+        elif callback.data == "subscriptions":
+            await show_subscriptions_menu(callback)
+        elif callback.data == "deposit":
+            await deposit_balance(callback)
+        elif callback.data.startswith("mode_"):
+            await handle_mode_selection(callback)
+        elif callback.data.startswith("sub_"):
+            await handle_subscription_selection(callback)
+        elif callback.data == "back_to_profile":
+            await handle_back_to_profile(callback)
+        elif callback.data == "referral":
+            from profile import show_referral_program
+            await show_referral_program(callback)
+        else:
+            await handle_other_callbacks(callback)
+    except Exception as e:
+        print(f"Ошибка в handle_inline_callback: {e}")
+        try:
+            await callback.answer("Произошла ошибка при обработке запроса")
+        except:
+            pass
+
 async def handle_other_callbacks(callback: CallbackQuery):
     """Обработчик для всех остальных callback'ов"""
-    # Здесь можно добавить логирование или другую обработку
-    print(f"Unhandled callback data: {callback.data}")
-    await callback.answer("Действие не распознано")
+    try:
+        print(f"Unhandled callback data: {callback.data}")
+        
+        # Проверим, начинается ли с sub_
+        if callback.data.startswith("sub_"):
+            print(f"Обнаружена подписка: {callback.data}")
+            # Попробуем обработать здесь
+            from subscriptions import handle_subscription_selection
+            return await handle_subscription_selection(callback)
+            
+        await callback.answer("Действие не распознано")
+    except Exception as e:
+        print(f"Ошибка в handle_other_callbacks: {e}")
+        try:
+            await callback.answer("Произошла ошибка при обработке запроса")
+        except:
+            pass
         
 def register_handlers():
     # Обработчики команд
@@ -852,6 +862,7 @@ def register_handlers():
     dp.callback_query.register(handle_back_to_profile, F.data == "back_to_profile")
     dp.callback_query.register(handle_admin_panel_callback, F.data == "admin_panel")
     dp.callback_query.register(show_referral_program, F.data == "referral")
+    dp.callback_query.register(handle_exchange_referral_balance, F.data == "exchange_referral_balance")
 
 async def main():
     init_db()

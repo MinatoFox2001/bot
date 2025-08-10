@@ -24,6 +24,7 @@ def init_db():
                 username TEXT,
                 full_name TEXT,
                 balance INTEGER DEFAULT 0,
+                referral_balance INTEGER DEFAULT 0,
                 mode TEXT DEFAULT 'chat',
                 subscription_type TEXT DEFAULT 'free',
                 subscription_expires DATETIME,
@@ -32,6 +33,23 @@ def init_db():
             )
         """)
         
+        # Проверяем, нужно ли добавить столбец referral_balance
+        # Временно отключаем dict_factory для получения корректных результатов PRAGMA
+        conn.row_factory = None  # Отключаем dict_factory для этого запроса
+        cursor.execute("PRAGMA table_info(users)")
+        columns_info = cursor.fetchall()
+        conn.row_factory = dict_factory  # Возвращаем dict_factory
+        
+        # Если таблица существует и не пустая, проверяем наличие столбца
+        if columns_info and len(columns_info[0]) > 1:
+            column_names = [column[1] for column in columns_info]
+            if 'referral_balance' not in column_names:
+                try:
+                    cursor.execute("ALTER TABLE users ADD COLUMN referral_balance INTEGER DEFAULT 0")
+                except sqlite3.OperationalError:
+                    pass
+        
+        # Остальной код функции остается без изменений...
         # Создаем таблицу логов сообщений
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS message_logs (
@@ -253,8 +271,8 @@ def is_subscription_active(user_id: int) -> bool:
         return expires_dt > datetime.now()
     except Exception:
         return False
+
 def is_user_admin(user_id: int) -> bool:
-    
     # Root админ всегда имеет доступ
     if user_id == ROOT_ADMIN_ID:
         return True
@@ -302,15 +320,15 @@ def get_all_admins() -> List[Dict]:
             return cursor.fetchall()
     except Exception:
         return []
-    
+
 def get_user_info(user_id: int) -> Optional[Dict]:
     """Получает информацию о пользователе по ID"""
     with sqlite3.connect(DATABASE_NAME) as conn:
         conn.row_factory = dict_factory
         cursor = conn.cursor()
-        cursor.execute("SELECT user_id, username, full_name, balance, subscription_type FROM users WHERE user_id = ?", (user_id,))
+        cursor.execute("SELECT user_id, username, full_name, balance, referral_balance, subscription_type FROM users WHERE user_id = ?", (user_id,))
         return cursor.fetchone()
-    
+
 # Добавьте эти функции в конец файла database.py:
 
 def init_discounts_table():
@@ -466,7 +484,6 @@ def deactivate_discount_code(code: str) -> bool:
         print(f"Ошибка при деактивации скидочного кода: {e}")
         return False
 
-
 def get_user_id_by_username(username: str) -> Optional[int]:
     """Получает ID пользователя по username"""
     with sqlite3.connect(DATABASE_NAME) as conn:
@@ -474,7 +491,7 @@ def get_user_id_by_username(username: str) -> Optional[int]:
         cursor.execute("SELECT user_id FROM users WHERE username = ? COLLATE NOCASE", (username,))
         result = cursor.fetchone()
         return result[0] if result else None
-    
+
 def init_referral_tables():
     """Создает таблицы для реферальной системы"""
     with sqlite3.connect(DATABASE_NAME) as conn:
@@ -595,4 +612,41 @@ def get_referral_stats(user_id: int) -> Dict:
             'total_earned': total_earned,
             'recent_payments': recent_payments
         }
-    
+
+def update_purchase_balance(user_id: int, amount: int):
+    """Обновляет баланс для покупок"""
+    with sqlite3.connect(DATABASE_NAME) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE users SET balance = balance + ? WHERE user_id = ?",
+            (amount, user_id)
+        )
+        conn.commit()
+
+def update_referral_balance(user_id: int, amount: int):
+    """Обновляет реферальный баланс"""
+    with sqlite3.connect(DATABASE_NAME) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE users SET referral_balance = referral_balance + ? WHERE user_id = ?",
+            (amount, user_id)
+        )
+        conn.commit()
+
+def transfer_referral_to_purchase_balance(user_id: int, amount: int) -> bool:
+    """Переводит средства с реферального баланса на баланс покупок"""
+    with sqlite3.connect(DATABASE_NAME) as conn:
+        cursor = conn.cursor()
+        # Проверяем, достаточно ли средств на реферальном балансе
+        cursor.execute("SELECT referral_balance FROM users WHERE user_id = ?", (user_id,))
+        result = cursor.fetchone()
+        if not result or result[0] < amount or amount <= 0:
+            return False
+        
+        # Выполняем перевод
+        cursor.execute(
+            "UPDATE users SET referral_balance = referral_balance - ?, balance = balance + ? WHERE user_id = ?",
+            (amount, amount, user_id)
+        )
+        conn.commit()
+        return True
