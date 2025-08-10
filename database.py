@@ -466,46 +466,6 @@ def deactivate_discount_code(code: str) -> bool:
         print(f"Ошибка при деактивации скидочного кода: {e}")
         return False
 
-# Обновите функцию init_db, добавив вызов init_discounts_table:
-def init_db():
-    with sqlite3.connect(DATABASE_NAME) as conn:
-        conn.row_factory = dict_factory
-        cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY,
-                username TEXT,
-                full_name TEXT,
-                balance INTEGER DEFAULT 0,
-                mode TEXT DEFAULT 'chat',
-                subscription_type TEXT DEFAULT 'free',
-                subscription_expires DATETIME,
-                tokens_used_today INTEGER DEFAULT 0,
-                last_token_reset DATE DEFAULT CURRENT_DATE
-            )
-        """)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS message_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                role TEXT,
-                message TEXT,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        # Таблица для администраторов
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS admins (
-                user_id INTEGER PRIMARY KEY,
-                added_by INTEGER,
-                added_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        conn.commit()
-    
-    # Инициализируем таблицы скидок
-    init_discounts_table()
-    init_user_discounts_table()
 
 def get_user_id_by_username(username: str) -> Optional[int]:
     """Получает ID пользователя по username"""
@@ -542,17 +502,6 @@ def init_referral_tables():
             )
         """)
         conn.commit()
-
-# Обновим функцию init_db(), добавив вызов init_referral_tables()
-def init_db():
-    with sqlite3.connect(DATABASE_NAME) as conn:
-        # ... существующий код ...
-        conn.commit()
-    
-    # Инициализируем таблицы скидок и рефералов
-    init_discounts_table()
-    init_user_discounts_table()
-    init_referral_tables()
 
 def add_referral(user_id: int, referrer_id: int) -> bool:
     """Добавляет реферальную связь"""
