@@ -8,7 +8,6 @@ from config import ROOT_ADMIN_ID, TIMEZONE
 # Минимальная сумма для вывода реферальных средств
 MIN_REFERRAL_WITHDRAWAL = 10
 
-# Обновим функцию get_profile_keyboard()
 def get_profile_keyboard(user_id: int) -> InlineKeyboardMarkup:
     buttons = [
         [InlineKeyboardButton(text="💳 Пополнить баланс (+100 руб.)", callback_data="deposit")],

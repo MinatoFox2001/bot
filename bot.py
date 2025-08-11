@@ -96,12 +96,13 @@ def get_main_keyboard(user_id: int = None) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 async def cleanup_chat(chat_id: int):
+    """Очистка чата от сообщений бота"""
     try:
         if chat_id in message_history:
-            # Удаляем только существующие сообщения, кроме последнего приветствия и админ панели
+            # Удаляем только существующие сообщения бота
             for msg in message_history[chat_id]['bot_msgs']:
                 try:
-                    if msg and hasattr(msg, 'message_id'):  # Проверка на None и наличие message_id
+                    if msg and hasattr(msg, 'message_id'):
                         # Не удаляем приветственное сообщение и админ панель
                         if not (hasattr(msg, 'text') and msg.text and 
                                ("🤖 Zenith — лучший друг" in msg.text or 
@@ -145,7 +146,8 @@ async def handle_start(message: Message):
     if not get_user(user_id):
         create_user(user_id, message.from_user.username, message.from_user.full_name)
 
-    await cleanup_chat(chat_id)
+    # Принудительная очистка всего чата - удаляем все сообщения которые можем
+    await force_cleanup_all_messages(chat_id)
 
     # Загружаем историю из БД
     history = get_last_messages(user_id, limit=20)
@@ -158,30 +160,6 @@ async def handle_start(message: Message):
     # Получаем новое приветственное сообщение
     welcome_text = get_welcome_message(user_id)
     welcome_keyboard = get_main_keyboard(user_id)
-
-    # Проверяем, есть ли последнее сообщение бота и содержит ли оно приветствие
-    last_msg = last_bot_messages.get(chat_id)
-    
-    try:
-        if (last_msg and 
-            hasattr(last_msg, 'text') and 
-            last_msg.text and 
-            "🤖 Zenith — лучший друг" in last_msg.text):
-            # Просто удаляем старое сообщение и отправляем новое
-            try:
-                await last_msg.delete()
-            except:
-                pass
-        
-        # Удаляем текущее сообщение если оно существует
-        if last_msg and last_msg != message:
-            try:
-                await last_msg.delete()
-            except:
-                pass
-        
-    except Exception as e:
-        print(f"Ошибка при удалении старого сообщения: {e}")
 
     # Отправляем новое сообщение
     try:
@@ -197,6 +175,37 @@ async def handle_start(message: Message):
         
     except Exception as e:
         print(f"Ошибка при отправке сообщения: {e}")
+
+async def force_cleanup_all_messages(chat_id: int):
+    """Принудительная очистка всех сообщений в чате"""
+    try:
+        # Очищаем историю сообщений
+        if chat_id in message_history:
+            # Удаляем все сохраненные сообщения бота
+            for msg in message_history[chat_id]['bot_msgs']:
+                try:
+                    if msg and hasattr(msg, 'message_id'):
+                        await bot.delete_message(chat_id, msg.message_id)
+                except:
+                    pass
+            # Очищаем историю
+            message_history[chat_id] = {'user_msgs': [], 'bot_msgs': []}
+        
+        # Очищаем last_bot_messages для этого чата
+        if chat_id in last_bot_messages:
+            try:
+                if last_bot_messages[chat_id] and hasattr(last_bot_messages[chat_id], 'message_id'):
+                    await bot.delete_message(chat_id, last_bot_messages[chat_id].message_id)
+            except:
+                pass
+            del last_bot_messages[chat_id]
+            
+        # Очищаем chat_histories для данного чата
+        if chat_id in chat_histories:
+            del chat_histories[chat_id]
+            
+    except Exception as e:
+        print(f"Ошибка при принудительной очистке чата: {e}")
 
 async def handle_profile_command(message: Message):
     await cleanup_chat(message.chat.id)
@@ -511,10 +520,10 @@ async def handle_back_to_main(callback: CallbackQuery):
 
 def get_daily_limit(sub_type: str) -> int:
     limits = {
-        'free': 20,
-        'tier1': 20000,
-        'tier2': 40000,
-        'tier3': 100000
+        'free': 20,      # 20 токенов
+        'tier1': 20000,  # 20k токенов
+        'tier2': 40000,  # 40k токенов
+        'tier3': 100000  # 100k токенов
     }
     return limits.get(sub_type, 20)
 

@@ -63,8 +63,8 @@ def get_subscriptions_keyboard(user_id: int) -> InlineKeyboardMarkup:
         buttons.append([InlineKeyboardButton(text="Zenith Nova - 500₽", callback_data="sub_tier2")])
         buttons.append([InlineKeyboardButton(text="Zenith Eclipse - 700₽", callback_data="sub_tier3")])
     
-    # Добавляем кнопку реферальной программы
-    buttons.append([InlineKeyboardButton(text="👥 Реферальная программа", callback_data="referral")])
+    # Убираем кнопку реферальной программы из меню подписок
+    # Добавляем только кнопку "Назад"
     buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_profile")])
     
     return InlineKeyboardMarkup(inline_keyboard=buttons)
