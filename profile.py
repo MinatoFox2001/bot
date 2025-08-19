@@ -193,10 +193,10 @@ async def deposit_balance(callback: CallbackQuery):
     """Обработчик кнопки пополнения баланса"""
     user_id = callback.from_user.id
     user_states[user_id] = "waiting_for_amount"  # Устанавливаем состояние
-
+    from bot import message_history, last_bot_messages
     # Очищаем и показываем меню пополнения
     try:
-        await callback.message.edit_text(
+        msg = await callback.message.edit_text(
             "💰 <b>Пополнение баланса</b>\n\n"
             "Введите сумму пополнения в рублях (минимум 100 руб.):\n\n"
             "Или нажмите 'Отмена' для возврата в профиль.",
@@ -205,8 +205,16 @@ async def deposit_balance(callback: CallbackQuery):
                     text="❌ Отмена", callback_data="profile")]
             ])
         )
+
+        # Сохраняем сообщение в историю
+        chat_id = callback.message.chat.id
+        if chat_id not in message_history:
+            message_history[chat_id] = {'user_msgs': [], 'bot_msgs': []}
+        # Добавляем в начало списка, чтобы потом легко удалить
+        message_history[chat_id]['bot_msgs'].insert(0, msg)
+
     except Exception:
-        await callback.message.answer(
+        msg = await callback.message.answer(
             "💰 <b>Пополнение баланса</b>\n\n"
             "Введите сумму пополнения в рублях (минимум 100 руб.):\n\n"
             "Или нажмите 'Отмена' для возврата в профиль.",
@@ -220,6 +228,15 @@ async def deposit_balance(callback: CallbackQuery):
         except:
             pass
 
+        # Сохраняем сообщение в историю
+        chat_id = callback.message.chat.id
+        if chat_id not in message_history:
+            message_history[chat_id] = {'user_msgs': [], 'bot_msgs': []}
+        # Добавляем в начало списка, чтобы потом легко удалить
+        message_history[chat_id]['bot_msgs'].insert(0, msg)
+        if chat_id in last_bot_messages:
+            last_bot_messages[chat_id] = msg
+
     await callback.answer()
 
 
@@ -227,6 +244,7 @@ async def deposit_balance(callback: CallbackQuery):
 async def process_deposit_amount(message: Message):
     """Обработка введенной суммы пополнения"""
     user_id = message.from_user.id
+    chat_id = message.chat.id
 
     # Проверяем, ожидаем ли мы ввод суммы от этого пользователя
     if user_id not in user_states or user_states[user_id] != "waiting_for_amount":
@@ -236,13 +254,28 @@ async def process_deposit_amount(message: Message):
     if user_id in user_states:
         del user_states[user_id]
 
+    # Удаляем сообщение пользователя с суммой
     try:
-        # Удаляем сообщение пользователя с суммой
-        try:
-            await message.delete()
-        except:
-            pass
+        await message.delete()
+    except:
+        pass
 
+    # Удаляем сообщение с инструкцией по пополнению баланса
+    try:
+        if chat_id in message_history and message_history[chat_id]['bot_msgs']:
+            # Ищем сообщение о пополнении баланса (оно должно быть первым в списке)
+            for i, msg in enumerate(message_history[chat_id]['bot_msgs']):
+                if msg and hasattr(msg, 'text') and msg.text and "Пополнение баланса" in msg.text:
+                    try:
+                        await bot.delete_message(chat_id, msg.message_id)
+                        message_history[chat_id]['bot_msgs'].pop(i)
+                        break
+                    except:
+                        pass
+    except Exception as e:
+        print(f"Ошибка при удалении сообщения пополнения: {e}")
+
+    try:
         # Проверяем формат ввода
         amount_text = message.text.strip()
 
@@ -372,6 +405,28 @@ async def process_deposit_amount(message: Message):
                     text="👤 Профиль", callback_data="profile")]
             ])
         )
+
+
+@error_handler
+async def clean_deposit_messages(chat_id: int):
+    """Очищает сообщения, связанные с пополнением баланса"""
+    try:
+        from state import message_history, last_bot_messages
+        if chat_id in message_history:
+            bot_msgs = message_history[chat_id]['bot_msgs']
+            for msg in bot_msgs[:]:  # Копируем список для безопасного удаления
+                if msg and hasattr(msg, 'message_id'):
+                    try:
+                        text = msg.text if hasattr(msg, 'text') else ""
+                        if "💰 Пополнение баланса" in text or "Введите сумму пополнения" in text:
+                            await bot.delete_message(chat_id, msg.message_id)
+                            if msg in message_history[chat_id]['bot_msgs']:
+                                message_history[chat_id]['bot_msgs'].remove(
+                                    msg)
+                    except:
+                        pass
+    except Exception as e:
+        print(f"Ошибка при очистке сообщений пополнения: {e}")
 
 
 @error_handler

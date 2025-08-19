@@ -92,14 +92,24 @@ def get_subscriptions_keyboard(user_id: int) -> InlineKeyboardMarkup:
 async def show_subscriptions_menu(callback: CallbackQuery):
     from profile import show_referral_program
     from bot import show_clean_menu
-    # Показываем чистое меню подписок
-    await show_clean_menu(
-        callback.message.chat.id,
-        callback.from_user.id,
-        get_subscription_menu_text(callback.from_user.id),
-        get_subscriptions_keyboard,
-        callback
-    )
+
+    # Редактируем текущее сообщение вместо отправки нового
+    try:
+        await callback.message.edit_text(
+            text=get_subscription_menu_text(callback.from_user.id),
+            reply_markup=get_subscriptions_keyboard(callback.from_user.id)
+        )
+        await callback.answer()
+    except Exception as e:
+        print(f"Ошибка при редактировании сообщения подписок: {e}")
+        # Если не удалось отредактировать, используем старый метод
+        await show_clean_menu(
+            callback.message.chat.id,
+            callback.from_user.id,
+            get_subscription_menu_text(callback.from_user.id),
+            get_subscriptions_keyboard,
+            callback
+        )
 
 
 @error_handler

@@ -348,11 +348,14 @@ async def handle_message(message: Message):
         is_in_admin_panel = any(
             admin_text in last_msg.text for admin_text in admin_texts)
 
-    # Если пользователь в админ панели, не очищаем чат
+    # Если пользователь в админ панели, не очищаем чат и не сохраняем историю
     if not is_in_admin_panel:
         await cleanup_chat(chat_id)
-
-    print(f"Обрабатываем как обычное сообщение ИИ от user_id={user_id}")
+        # Сохраняем историю только для сообщений ИИ
+        if chat_id not in message_history:
+            message_history[chat_id] = {'user_msgs': [], 'bot_msgs': []}
+        message_history[chat_id]['user_msgs'].append(message)
+        print(f"Обрабатываем как обычное сообщение ИИ от user_id={user_id}")
 
     log_message(user_id, "user", message.text)  # 💾 лог пользователя
 
@@ -950,11 +953,32 @@ async def send_or_edit_message(chat_id: int, text: str, reply_markup=None, messa
 async def show_clean_menu(chat_id: int, user_id: int, text: str, keyboard_func, callback=None):
     """Показывает чистое меню без засорения чата"""
     from state import message_history, last_bot_messages
-    # Очищаем предыдущие сообщения
-    await clean_previous_messages(chat_id)
 
     # Получаем клавиатуру
     keyboard = keyboard_func(user_id)
+
+    # Пытаемся отредактировать последнее сообщение если оно существует
+    last_msg = last_bot_messages.get(chat_id)
+    if last_msg and hasattr(last_msg, 'text'):
+        try:
+            await last_msg.edit_text(text=text, reply_markup=keyboard)
+            if callback:
+                try:
+                    await callback.answer()
+                except:
+                    pass
+            return last_msg
+        except Exception as e:
+            print(f"Не удалось отредактировать сообщение: {e}")
+            # Если не удалось отредактировать, удаляем старое сообщение
+            try:
+                await last_msg.delete()
+            except:
+                pass
+
+    # Если редактирование не удалось или нет последнего сообщения, отправляем новое
+    # Очищаем предыдущие сообщения
+    await clean_previous_messages(chat_id)
 
     # Отправляем новое сообщение
     msg = await bot.send_message(chat_id, text, reply_markup=keyboard)

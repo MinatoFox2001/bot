@@ -402,15 +402,7 @@ async def handle_admin_callback(callback: CallbackQuery):
     elif action == "admin_stats":
         await handle_admin_stats(callback)
     elif action == "admin_manage_admins":
-        # Сохраняем сообщение в истории
-        chat_id = callback.message.chat.id
-        if chat_id not in message_history:
-            message_history[chat_id] = {'user_msgs': [], 'bot_msgs': []}
-
-        # Обновляем последнее сообщение бота
-        from state import last_bot_messages
-        last_bot_messages[chat_id] = callback.message
-
+        # Редактируем сообщение вместо отправки нового
         await callback.message.edit_text(
             "👨‍💼 Управление администраторами",
             reply_markup=get_admins_keyboard()
@@ -419,15 +411,7 @@ async def handle_admin_callback(callback: CallbackQuery):
     elif action == "admin_users":
         await handle_admin_users(callback)
     elif action == "admin_discounts":
-        # Сохраняем сообщение в истории
-        chat_id = callback.message.chat.id
-        if chat_id not in message_history:
-            message_history[chat_id] = {'user_msgs': [], 'bot_msgs': []}
-
-        # Обновляем последнее сообщение бота
-        from state import last_bot_messages
-        last_bot_messages[chat_id] = callback.message
-
+        # Редактируем сообщение вместо отправки нового
         await callback.message.edit_text(
             "🎟 <b>Управление скидками</b>\n\n"
             "Выберите действие:",
@@ -452,16 +436,7 @@ async def handle_admin_callback(callback: CallbackQuery):
         await handle_add_admin_start(callback)
     elif action == "admin_add_by_id":
         admin_states[callback.from_user.id] = 'waiting_for_admin_id_to_add'
-
-        # Сохраняем сообщение в истории
-        chat_id = callback.message.chat.id
-        if chat_id not in message_history:
-            message_history[chat_id] = {'user_msgs': [], 'bot_msgs': []}
-
-        # Обновляем последнее сообщение бота
-        from state import last_bot_messages
-        last_bot_messages[chat_id] = callback.message
-
+        # Редактируем сообщение вместо отправки нового
         await callback.message.edit_text(
             "Введите ID пользователя, которого хотите назначить администратором:",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
@@ -470,16 +445,7 @@ async def handle_admin_callback(callback: CallbackQuery):
         await callback.answer()
     elif action == "admin_add_by_username":
         admin_states[callback.from_user.id] = 'waiting_for_admin_username_to_add'
-
-        # Сохраняем сообщение в истории
-        chat_id = callback.message.chat.id
-        if chat_id not in message_history:
-            message_history[chat_id] = {'user_msgs': [], 'bot_msgs': []}
-
-        # Обновляем последнее сообщение бота
-        from state import last_bot_messages
-        last_bot_messages[chat_id] = callback.message
-
+        # Редактируем сообщение вместо отправки нового
         await callback.message.edit_text(
             "Введите username пользователя, которого хотите назначить администратором:\n"
             "Пример: @username\n\n"
@@ -498,15 +464,7 @@ async def handle_admin_callback(callback: CallbackQuery):
         if callback.from_user.id in admin_states:
             del admin_states[callback.from_user.id]
 
-        # Сохраняем сообщение в истории
-        chat_id = callback.message.chat.id
-        if chat_id not in message_history:
-            message_history[chat_id] = {'user_msgs': [], 'bot_msgs': []}
-
-        # Обновляем последнее сообщение бота
-        from state import last_bot_messages
-        last_bot_messages[chat_id] = callback.message
-
+        # Редактируем сообщение вместо отправки нового
         await callback.message.edit_text(
             "🎛 Панель администратора",
             reply_markup=get_admin_keyboard()
@@ -524,7 +482,7 @@ async def handle_admin_callback(callback: CallbackQuery):
         welcome_text = get_welcome_message(callback.from_user.id)
         keyboard = get_main_keyboard(callback.from_user.id)
 
-        # Пытаемся отредактировать текущее сообщение
+        # Редактируем сообщение вместо отправки нового
         try:
             await callback.message.edit_text(
                 welcome_text,
@@ -538,17 +496,10 @@ async def handle_admin_callback(callback: CallbackQuery):
             except:
                 pass
 
-            new_msg = await callback.message.answer(
+            await callback.message.answer(
                 welcome_text,
                 reply_markup=keyboard
             )
-
-            # Обновляем историю сообщений
-            chat_id = callback.message.chat.id
-            if chat_id not in message_history:
-                message_history[chat_id] = {'user_msgs': [], 'bot_msgs': []}
-            message_history[chat_id]['bot_msgs'].append(new_msg)
-            last_bot_messages[chat_id] = new_msg
 
         await callback.answer()
 
