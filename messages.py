@@ -1,6 +1,7 @@
 from database import is_subscription_active, is_user_admin, get_subscription_info
+from error_handler import error_handler,sync_error_handler
 
-
+@sync_error_handler
 def get_welcome_message(user_id=None):
     # Если user_id не передан, возвращаем общее приветствие
     if user_id is None:
@@ -49,7 +50,7 @@ def get_welcome_message(user_id=None):
         "🔄 Версия: Zenith Beta v1.0"
     )
 
-
+@sync_error_handler
 def get_profile_text(user: dict) -> str:
     try:
         # Проверяем обязательные поля
@@ -79,6 +80,7 @@ def get_profile_text(user: dict) -> str:
         print(f"Ошибка в get_profile_text: {e}")
         return "❌ Не удалось загрузить данные профиля"
 
+@sync_error_handler
 def get_mode_changed_message(mode_type: str):
     messages = {
         "teacher": "Режим учителя активирован!",
@@ -88,6 +90,7 @@ def get_mode_changed_message(mode_type: str):
     }
     return messages.get(mode_type, "Режим изменен!")
 
+@sync_error_handler
 def get_subscription_info_text(user: dict) -> str:
     try:
         if not user or not isinstance(user, dict):
@@ -120,6 +123,7 @@ def get_subscription_info_text(user: dict) -> str:
         limit = sub_limits.get(sub_type, 20)
         
         # Форматируем значения
+        @sync_error_handler
         def format_tokens(value):
             if value >= 1000:
                 return f"{value//1000}k"
@@ -156,7 +160,8 @@ def get_subscription_info_text(user: dict) -> str:
     except Exception as e:
         print(f"Критическая ошибка в get_subscription_info_text: {str(e)}")
         return "🔔 Подписка: ошибка загрузки"
-    
+
+@sync_error_handler    
 def get_subscription_menu_text(user_id: int = None) -> str:
     from database import get_user, is_subscription_active, get_user_active_discount
     from datetime import datetime
@@ -253,12 +258,14 @@ def get_subscription_menu_text(user_id: int = None) -> str:
         "Текущая подписка отображается в вашем профиле."
     )
 
+@sync_error_handler
 def get_return_to_main_message():
     return (
         "🔙 Пожалуйста, вернитесь в главное меню, чтобы задать вопрос ИИ\n\n"
         "Используйте команду /start или кнопку ниже"
     )
 
+@sync_error_handler
 def get_referral_message(user_id: int) -> str:
     """Возвращает сообщение с реферальной ссылкой и статистикой"""
     from database import get_referral_stats, get_user
