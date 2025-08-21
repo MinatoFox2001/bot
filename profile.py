@@ -244,11 +244,13 @@ async def deposit_balance(callback: CallbackQuery):
 async def process_deposit_amount(message: Message):
     """Обработка введенной суммы пополнения"""
     user_id = message.from_user.id
-    chat_id = message.chat.id
 
     # Проверяем, ожидаем ли мы ввод суммы от этого пользователя
     if user_id not in user_states or user_states[user_id] != "waiting_for_amount":
         return  # Если не ожидаем, пропускаем обработку
+
+    # Очищаем сообщения пополнения баланса
+    await clean_deposit_messages(message.chat.id)
 
     # Убираем состояние пользователя
     if user_id in user_states:
@@ -259,21 +261,6 @@ async def process_deposit_amount(message: Message):
         await message.delete()
     except:
         pass
-
-    # Удаляем сообщение с инструкцией по пополнению баланса
-    try:
-        if chat_id in message_history and message_history[chat_id]['bot_msgs']:
-            # Ищем сообщение о пополнении баланса (оно должно быть первым в списке)
-            for i, msg in enumerate(message_history[chat_id]['bot_msgs']):
-                if msg and hasattr(msg, 'text') and msg.text and "Пополнение баланса" in msg.text:
-                    try:
-                        await bot.delete_message(chat_id, msg.message_id)
-                        message_history[chat_id]['bot_msgs'].pop(i)
-                        break
-                    except:
-                        pass
-    except Exception as e:
-        print(f"Ошибка при удалении сообщения пополнения: {e}")
 
     try:
         # Проверяем формат ввода
