@@ -184,7 +184,7 @@ async def show_clean_profile_menu(callback: CallbackQuery):
 
 
 @error_handler
-async def show_profile(callback: CallbackQuery, bot_instance):
+async def show_profile(callback: CallbackQuery):
     await show_clean_profile_menu(callback)
 
 

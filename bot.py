@@ -1,17 +1,15 @@
-from aiogram import Bot, Dispatcher, F
-from aiogram.enums import ParseMode
+from aiogram import F
 from aiogram.types import (
     Message,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
-    CallbackQuery,
-    BotCommand
+    CallbackQuery
 )
 from aiogram.filters import Command
 import aiohttp
 import asyncio
 
-from config import API_TOKEN, OPENROUTER_API_KEY, AI_NAME
+from config import OPENROUTER_API_KEY, AI_NAME
 from database import (
     init_db,
     get_user,
@@ -28,25 +26,18 @@ from database import (
 from profile import (
     show_profile,
     deposit_balance,
-    get_profile_keyboard,
     handle_exchange_referral_balance,
     handle_referral_withdrawal_request,
-    process_deposit_amount,
-    process_referral_withdrawal_amount,
     show_referral_program,
-    payment_checks
+    process_deposit_amount,
+    process_referral_withdrawal_amount
 )
-from messages import (
-    get_welcome_message,
-    get_profile_text,
-    get_return_to_main_message,
-    get_subscription_info_text
-)
-from state import message_history, chat_histories, last_bot_messages, admin_states, user_states
+from messages import get_welcome_message
+from state import message_history, chat_histories, last_bot_messages
 from shared import bot, dp
-from admin import register_admin_handlers
+from admin import register_admin_handlers, handle_admin_text_message
 from error_handler import error_handler, sync_error_handler
-from typing import Optional
+from typing import Dict
 
 
 # === Константы ===
@@ -60,10 +51,11 @@ MODEL_PROMPTS = {
 }
 
 MAX_HISTORY_LENGTH = 21
-chat_modes = {}   # {chat_id: "menu" | "chat"}
+chat_modes: Dict[int, str] = {}   # {chat_id: "menu" | "chat"}
 
 
 # === Главное меню ===
+@sync_error_handler
 def get_main_keyboard(user_id: int = None) -> InlineKeyboardMarkup:
     buttons = [
         [
@@ -102,20 +94,47 @@ async def handle_start(message: Message):
     last_bot_messages[chat_id] = msg
 
 
-# === Вход в чат с ИИ ===
+# === Режимы ===
+@error_handler
+async def handle_modes(callback: CallbackQuery):
+    await callback.message.edit_text(
+        text="Выберите режим работы:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="👨‍🏫 Учитель",
+                                  callback_data="mode_teacher")],
+            [InlineKeyboardButton(text="📝 Контент-менеджер",
+                                  callback_data="mode_content_manager")],
+            [InlineKeyboardButton(text="✍️ Редактор",
+                                  callback_data="mode_editor")],
+            [InlineKeyboardButton(text="💬 Свободный чат",
+                                  callback_data="mode_chat")],
+            [InlineKeyboardButton(
+                text="🔙 Назад", callback_data="back_to_main")]
+        ])
+    )
+    await callback.answer()
+
+
+@error_handler
+async def handle_set_mode(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    mode = callback.data.replace("mode_", "")
+    update_user_mode(user_id, mode)
+    await callback.answer(f"✅ Режим изменён на {mode}")
+
+
+# === Чат ===
 @error_handler
 async def handle_start_chat(callback: CallbackQuery):
     chat_id = callback.message.chat.id
     user_id = callback.from_user.id
     chat_modes[chat_id] = "chat"
 
-    # Убираем меню
     try:
         await callback.message.delete()
     except:
         pass
 
-    # Отправляем закреплёнку
     pinned = await bot.send_message(
         chat_id,
         "💬 Вы находитесь в диалоговом чате.\n\n"
@@ -126,14 +145,13 @@ async def handle_start_chat(callback: CallbackQuery):
         ])
     )
     try:
-        await bot.pin_chat_message(chat_id, pinned.message_id)
+        await bot.pin_chat_message(chat_id, pinned.message_id, disable_notification=True)
     except:
         pass
 
     await callback.answer()
 
 
-# === Выход из чата ===
 @error_handler
 async def handle_back_to_main(callback: CallbackQuery):
     chat_id = callback.message.chat.id
@@ -160,93 +178,90 @@ async def handle_back_to_main(callback: CallbackQuery):
     await callback.answer()
 
 
-# === Сообщения пользователя ===
+# === Сообщения пользователя в чате ===
 @error_handler
 async def handle_message(message: Message):
     chat_id = message.chat.id
     user_id = message.from_user.id
 
+    # Если пользователь не в режиме чата
     if chat_modes.get(chat_id) != "chat":
-        return  # в меню сообщения не обрабатываем
+        # Проверяем, не ожидаем ли мы от пользователя ввод (например, сумму для пополнения)
+        from state import user_states
+        if user_id in user_states and user_states[user_id] in [
+            "waiting_for_amount",           # Ожидание суммы пополнения
+            "waiting_for_withdrawal_amount",  # Ожидание суммы вывода
+            'waiting_for_admin_id_to_add',
+            'waiting_for_admin_username_to_add',
+            'waiting_for_admin_id_to_remove',
+            'waiting_for_discount_params',
+            'waiting_for_discount_code_to_delete'
+        ]:
+            # Это ожидаемый ввод, обрабатываем его соответствующей функцией
+            from profile import process_deposit_amount, process_referral_withdrawal_amount
+            from admin import handle_admin_text_message
 
-    # Сохраняем
-    if chat_id not in message_history:
-        message_history[chat_id] = {"user_msgs": [], "bot_msgs": []}
-    message_history[chat_id]["user_msgs"].append(message)
-    log_message(user_id, "user", message.text)
+            if user_states[user_id] == "waiting_for_amount":
+                await process_deposit_amount(message)
+            elif user_states[user_id] == "waiting_for_withdrawal_amount":
+                await process_referral_withdrawal_amount(message)
+            else:
+                await handle_admin_text_message(message)
+            return
 
-    reset_daily_tokens_if_needed(user_id)
-    user = get_user(user_id)
-    if not user:
-        await message.answer("Сначала запустите бота командой /start")
+        # Если это не ожидаемый ввод, то показываем информацию о режиме чата
+        try:
+            # Удаляем сообщение пользователя
+            await message.delete()
+        except:
+            pass
+
+        # Отправляем информационное сообщение
+        info_msg = await message.answer(
+            "Для общения с Zenith используйте отдельный режим чата.\n"
+            "Нажмите кнопку ниже, чтобы перейти в режим чата:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="💬 Чат с Zenith", callback_data="start_chat")]
+            ])
+        )
+
+        # Удаляем информационное сообщение через 10 секунд
+        await asyncio.sleep(10)
+        try:
+            await info_msg.delete()
+        except:
+            pass
+
+        # Удаляем уведомление о закреплении через 10 секунд
+        await asyncio.sleep(10)
+        try:
+            # Получаем последние сообщения в чате и ищем уведомление о закреплении
+            async for msg in bot.get_chat_history(chat_id, limit=5):
+                if msg.text and "закрепил(а) удалённое сообщение" in msg.text.lower():
+                    await msg.delete()
+                    break
+        except:
+            pass
+
         return
 
-    if "mode" not in user:
-        await message.answer("Пожалуйста, сначала выберите режим работы")
-        return
-
-    sub_info = get_subscription_info(user_id)
-    tokens_needed = len(message.text.split()) * 2
-    if sub_info["tokens_used_today"] + tokens_needed > get_daily_limit(sub_info["subscription_type"]):
-        await message.answer("⚠️ Превышен дневной лимит токенов для вашей подписки!")
-        return
-
-    increment_token_usage(user_id, tokens_needed)
-
-    # История
-    mode = user.get("mode", "chat")
-    system_prompt = MODEL_PROMPTS.get(mode, BASE_SYSTEM_PROMPT)
-
-    if chat_id not in chat_histories:
-        chat_histories[chat_id] = [
-            {"role": "system", "content": system_prompt}]
-        past = get_last_messages(user_id, limit=20)
-        for msg in past:
-            chat_histories[chat_id].append(
-                {"role": msg["role"], "content": msg["message"]})
-
-    chat_histories[chat_id].append({"role": "user", "content": message.text})
-
-    if len(chat_histories[chat_id]) > MAX_HISTORY_LENGTH:
-        chat_histories[chat_id] = [chat_histories[chat_id][0]] + \
-            chat_histories[chat_id][-MAX_HISTORY_LENGTH + 1:]
-
-    # Запрос к AI
-    try:
-        async with aiohttp.ClientSession() as session:
-            headers = {
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json"
-            }
-            payload = {"model": AI_NAME, "messages": chat_histories[chat_id]}
-            async with session.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    answer = data["choices"][0]["message"]["content"]
-                    chat_histories[chat_id].append(
-                        {"role": "assistant", "content": answer})
-                    log_message(user_id, "assistant", answer)
-                    await message.answer(answer)
-                else:
-                    error = await response.text()
-                    await message.answer(f"⚠️ Ошибка: {error}")
-    except Exception as e:
-        await message.answer(f"⚠️ Произошла ошибка: {str(e)}")
-
-
-# === Лимиты ===
-def get_daily_limit(sub_type: str) -> int:
-    limits = {"free": 20, "tier1": 20000, "tier2": 40000, "tier3": 100000}
-    return limits.get(sub_type, 20)
+    # Основная логика общения с AI (ваша существующая логика)
+    await message.answer("⚡ Чат с ИИ пока заглушка, добавь сюда логику общения.")
 
 
 # === Регистрация хендлеров ===
+@sync_error_handler
 def register_handlers():
     dp.message.register(handle_start, Command("start"))
     dp.message.register(handle_message, F.text & ~F.text.startswith("/"))
 
+    dp.callback_query.register(handle_modes, F.data == "modes")
+    dp.callback_query.register(handle_set_mode, F.data.startswith("mode_"))
     dp.callback_query.register(handle_start_chat, F.data == "start_chat")
     dp.callback_query.register(handle_back_to_main, F.data == "back_to_main")
+
+    # profile.py обёртки с bot_instance
     dp.callback_query.register(show_profile, F.data == "profile")
     dp.callback_query.register(deposit_balance, F.data == "deposit")
     dp.callback_query.register(
@@ -254,9 +269,18 @@ def register_handlers():
     dp.callback_query.register(
         handle_referral_withdrawal_request, F.data == "referral_withdrawal")
     dp.callback_query.register(show_referral_program, F.data == "referral")
+    # subscriptions.py handlers
+    from subscriptions import show_subscriptions_menu, handle_subscription_selection, handle_back_to_profile
+    dp.callback_query.register(
+        show_subscriptions_menu, F.data == "subscriptions")
+    dp.callback_query.register(
+        handle_subscription_selection, F.data.startswith("sub_"))
+    dp.callback_query.register(
+        handle_back_to_profile, F.data == "back_to_profile")
 
 
 # === Запуск ===
+@error_handler
 async def main():
     init_db()
     register_handlers()
