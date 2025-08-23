@@ -38,6 +38,7 @@ from shared import bot, dp
 from admin import register_admin_handlers, handle_admin_text_message
 from error_handler import error_handler, sync_error_handler
 from typing import Dict
+from aiogram.enums import ContentType
 
 
 # === Константы ===
@@ -135,7 +136,8 @@ async def handle_start_chat(callback: CallbackQuery):
     except:
         pass
 
-    pinned = await bot.send_message(
+    # Убираем закрепление сообщения - просто отправляем сообщение без закрепления
+    await bot.send_message(
         chat_id,
         "💬 Вы находитесь в диалоговом чате.\n\n"
         "Чтобы выйти в меню, нажмите кнопку ниже 👇",
@@ -144,10 +146,6 @@ async def handle_start_chat(callback: CallbackQuery):
                 text="🔙 В меню", callback_data="back_to_main")]
         ])
     )
-    try:
-        await bot.pin_chat_message(chat_id, pinned.message_id, disable_notification=True)
-    except:
-        pass
 
     await callback.answer()
 
@@ -157,11 +155,6 @@ async def handle_back_to_main(callback: CallbackQuery):
     chat_id = callback.message.chat.id
     user_id = callback.from_user.id
     chat_modes[chat_id] = "menu"
-
-    try:
-        await bot.unpin_all_chat_messages(chat_id)
-    except:
-        pass
 
     welcome_text = get_welcome_message(user_id)
     keyboard = get_main_keyboard(user_id)
@@ -183,7 +176,6 @@ async def handle_back_to_main(callback: CallbackQuery):
 async def handle_message(message: Message):
     chat_id = message.chat.id
     user_id = message.from_user.id
-
     # Если пользователь не в режиме чата
     if chat_modes.get(chat_id) != "chat":
         # Проверяем, не ожидаем ли мы от пользователя ввод (например, сумму для пополнения)
@@ -249,8 +241,9 @@ async def handle_message(message: Message):
     # Основная логика общения с AI (ваша существующая логика)
     await message.answer("⚡ Чат с ИИ пока заглушка, добавь сюда логику общения.")
 
-
 # === Регистрация хендлеров ===
+
+
 @sync_error_handler
 def register_handlers():
     dp.message.register(handle_start, Command("start"))

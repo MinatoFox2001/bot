@@ -12,11 +12,14 @@ import asyncio
 # Минимальная сумма для вывода реферальных средств
 MIN_REFERRAL_WITHDRAWAL = 10
 
-# Хранение состояния пользователй
+# Хранение состояния пользователей
 user_states = {}
 
 # Хранение информации о платежах для автоматической проверки
 payment_checks = {}  # {payment_id: {user_id: int, message_id: int, chat_id: int}}
+
+# Хранение активных сообщений для каждого пользователя
+active_user_messages = {}  # {user_id: message_id}
 
 
 @sync_error_handler
@@ -60,10 +63,14 @@ async def show_referral_program(callback: CallbackQuery):
         keyboard_buttons.append([InlineKeyboardButton(
             text="🔙 Назад", callback_data="back_to_profile")])
 
-        await callback.message.edit_text(
+        msg = await callback.message.edit_text(
             text=get_referral_message(callback.from_user.id),
             reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
         )
+
+        # Сохраняем ID активного сообщения
+        active_user_messages[callback.from_user.id] = msg.message_id
+
         await callback.answer()
     except Exception as e:
         print(f"Ошибка в show_referral_program: {e}")
@@ -77,6 +84,16 @@ async def handle_exchange_referral_balance(callback: CallbackQuery):
     from messages import get_referral_message
 
     user_id = callback.from_user.id
+
+    # Проверяем, является ли это сообщение активным
+    if user_id in active_user_messages and active_user_messages[user_id] != callback.message.message_id:
+        # Удаляем старое сообщение пользователя, если оно существует
+        try:
+            await callback.message.delete()
+        except:
+            pass
+        await callback.answer("Пожалуйста, используйте актуальное меню. Повторите действие.", show_alert=True)
+        return
 
     try:
         user = get_user(user_id)
@@ -105,11 +122,14 @@ async def handle_exchange_referral_balance(callback: CallbackQuery):
             keyboard_buttons.append([InlineKeyboardButton(
                 text="🔙 Назад", callback_data="back_to_profile")])
 
-            await callback.message.edit_text(
+            msg = await callback.message.edit_text(
                 text=get_referral_message(user_id),
                 reply_markup=InlineKeyboardMarkup(
                     inline_keyboard=keyboard_buttons)
             )
+
+            # Обновляем ID активного сообщения
+            active_user_messages[user_id] = msg.message_id
         else:
             await callback.answer("❌ Ошибка при переводе средств", show_alert=True)
 
@@ -121,18 +141,29 @@ async def handle_exchange_referral_balance(callback: CallbackQuery):
 @error_handler
 async def show_clean_profile_menu(callback: CallbackQuery):
     """Показывает чистое меню профиля"""
+    # Проверяем, является ли это сообщение активным
+    if callback.from_user.id in active_user_messages and active_user_messages[callback.from_user.id] != callback.message.message_id:
+        # Удаляем старое сообщение пользователя, если оно существует
+        try:
+            await callback.message.delete()
+        except:
+            pass
+        await callback.answer("Пожалуйста, используйте актуальное меню. Повторите действие.", show_alert=True)
+        return
+
     user = get_user(callback.from_user.id)
     if not user:
         try:
-            await callback.message.edit_text(
+            msg = await callback.message.edit_text(
                 "❌ Профиль не найден. Пожалуйста, запустите бота командой /start",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(
                         text="🔙 Назад", callback_data="back_to_main")]
                 ])
             )
+            active_user_messages[callback.from_user.id] = msg.message_id
         except Exception:
-            await callback.message.answer(
+            msg = await callback.message.answer(
                 "❌ Профиль не найден. Пожалуйста, запустите бота командой /start",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(
@@ -143,6 +174,7 @@ async def show_clean_profile_menu(callback: CallbackQuery):
                 await callback.message.delete()
             except:
                 pass
+            active_user_messages[callback.from_user.id] = msg.message_id
         await callback.answer()
         return
 
@@ -165,13 +197,14 @@ async def show_clean_profile_menu(callback: CallbackQuery):
 
     # Пытаемся отредактировать сообщение
     try:
-        await callback.message.edit_text(
+        msg = await callback.message.edit_text(
             text=full_text,
             reply_markup=keyboard
         )
+        active_user_messages[callback.from_user.id] = msg.message_id
     except Exception:
         # Если не удалось отредактировать, отправляем новое сообщение
-        await callback.message.answer(
+        msg = await callback.message.answer(
             text=full_text,
             reply_markup=keyboard
         )
@@ -179,6 +212,7 @@ async def show_clean_profile_menu(callback: CallbackQuery):
             await callback.message.delete()
         except:
             pass
+        active_user_messages[callback.from_user.id] = msg.message_id
 
     await callback.answer()
 
@@ -191,6 +225,16 @@ async def show_profile(callback: CallbackQuery):
 @error_handler
 async def deposit_balance(callback: CallbackQuery):
     """Обработчик кнопки пополнения баланса"""
+    # Проверяем, является ли это сообщение активным
+    if callback.from_user.id in active_user_messages and active_user_messages[callback.from_user.id] != callback.message.message_id:
+        # Удаляем старое сообщение пользователя, если оно существует
+        try:
+            await callback.message.delete()
+        except:
+            pass
+        await callback.answer("Пожалуйста, используйте актуальное меню. Повторите действие.", show_alert=True)
+        return
+
     user_id = callback.from_user.id
     user_states[user_id] = "waiting_for_amount"  # Устанавливаем состояние
     from bot import message_history, last_bot_messages
@@ -212,6 +256,9 @@ async def deposit_balance(callback: CallbackQuery):
             message_history[chat_id] = {'user_msgs': [], 'bot_msgs': []}
         # Добавляем в начало списка, чтобы потом легко удалить
         message_history[chat_id]['bot_msgs'].insert(0, msg)
+
+        # Сохраняем ID активного сообщения
+        active_user_messages[user_id] = msg.message_id
 
     except Exception:
         msg = await callback.message.answer(
@@ -237,6 +284,9 @@ async def deposit_balance(callback: CallbackQuery):
         if chat_id in last_bot_messages:
             last_bot_messages[chat_id] = msg
 
+        # Сохраняем ID активного сообщения
+        active_user_messages[user_id] = msg.message_id
+
     await callback.answer()
 
 
@@ -247,6 +297,11 @@ async def process_deposit_amount(message: Message):
 
     # Проверяем, ожидаем ли мы ввод суммы от этого пользователя
     if user_id not in user_states or user_states[user_id] != "waiting_for_amount":
+        # Удаляем сообщение пользователя
+        try:
+            await message.delete()
+        except:
+            pass
         return  # Если не ожидаем, пропускаем обработку
 
     # Очищаем сообщения пополнения баланса
@@ -355,7 +410,7 @@ async def process_deposit_amount(message: Message):
 
             except Exception as e:
                 print(f"Ошибка при отправке сообщения о платеже: {e}")
-                await message.answer(
+                payment_msg = await message.answer(
                     "❌ Ошибка при создании платежа. Попробуйте позже.",
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                         [InlineKeyboardButton(
@@ -363,13 +418,16 @@ async def process_deposit_amount(message: Message):
                     ])
                 )
         else:
-            await message.answer(
+            payment_msg = await message.answer(
                 "❌ Произошла ошибка при создании платежа. Попробуйте позже или обратитесь в поддержку.",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(
                         text="👤 Профиль", callback_data="profile")]
                 ])
             )
+
+        # Сохраняем ID активного сообщения
+        active_user_messages[user_id] = payment_msg.message_id
 
     except ValueError:
         error_msg = await message.answer(
@@ -385,13 +443,15 @@ async def process_deposit_amount(message: Message):
             pass
     except Exception as e:
         print(f"Ошибка при обработке суммы пополнения: {e}")
-        await message.answer(
+        error_msg = await message.answer(
             "❌ Произошла ошибка при обработке запроса. Попробуйте позже.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(
                     text="👤 Профиль", callback_data="profile")]
             ])
         )
+        # Сохраняем ID активного сообщения
+        active_user_messages[user_id] = error_msg.message_id
 
 
 @error_handler
@@ -526,6 +586,9 @@ async def handle_successful_payment(payment_info: dict, payment_id: str):
                 # Сохраняем ID сообщения профиля
                 from bot import profile_message_ids
                 profile_message_ids[user_id] = profile_msg.message_id
+
+                # Сохраняем ID активного сообщения
+                active_user_messages[user_id] = profile_msg.message_id
         except Exception as e:
             print(f"Ошибка при показе профиля: {e}")
 
@@ -550,12 +613,13 @@ async def handle_successful_payment(payment_info: dict, payment_id: str):
 async def handle_canceled_payment(payment_info: dict, payment_id: str):
     """Обработка отмененного платежа"""
     try:
+        user_id = payment_info['user_id']
         chat_id = payment_info['chat_id']
         message_id = payment_info['message_id']
 
         # Обновляем сообщение о платеже
         try:
-            await bot.edit_message_text(
+            msg = await bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=message_id,
                 text="❌ Платеж был отменен или истек.",
@@ -564,6 +628,8 @@ async def handle_canceled_payment(payment_info: dict, payment_id: str):
                         text="💳 Повторить", callback_data="deposit")]
                 ])
             )
+            # Сохраняем ID активного сообщения
+            active_user_messages[user_id] = msg.message_id
         except:
             pass
 
@@ -581,6 +647,16 @@ async def handle_referral_withdrawal_request(callback: CallbackQuery):
     """Обработчик запроса на вывод реферальных средств"""
     from database import get_user
 
+    # Проверяем, является ли это сообщение активным
+    if callback.from_user.id in active_user_messages and active_user_messages[callback.from_user.id] != callback.message.message_id:
+        # Удаляем старое сообщение пользователя, если оно существует
+        try:
+            await callback.message.delete()
+        except:
+            pass
+        await callback.answer("Пожалуйста, используйте актуальное меню. Повторите действие.", show_alert=True)
+        return
+
     user_id = callback.from_user.id
     user = get_user(user_id)
 
@@ -597,7 +673,7 @@ async def handle_referral_withdrawal_request(callback: CallbackQuery):
     # Установим состояние ожидания ввода суммы
     user_states[user_id] = 'waiting_for_withdrawal_amount'
 
-    await callback.message.edit_text(
+    msg = await callback.message.edit_text(
         f"Введите сумму для вывода (баланс: {referral_balance} руб.):\n"
         f"Минимальная сумма: {MIN_REFERRAL_WITHDRAWAL} руб.\n\n"
         f"Или отправьте 'отмена' для отмены.",
@@ -605,6 +681,9 @@ async def handle_referral_withdrawal_request(callback: CallbackQuery):
             [InlineKeyboardButton(text="❌ Отмена", callback_data="referral")]
         ])
     )
+
+    # Сохраняем ID активного сообщения
+    active_user_messages[user_id] = msg.message_id
     await callback.answer()
 
 
@@ -615,6 +694,11 @@ async def process_referral_withdrawal_amount(message: Message):
 
     # Проверяем, ожидаем ли мы ввод суммы от этого пользователя
     if user_id not in user_states or user_states[user_id] != 'waiting_for_withdrawal_amount':
+        # Удаляем сообщение пользователя
+        try:
+            await message.delete()
+        except:
+            pass
         return
 
     # Убираем состояние пользователя
@@ -657,7 +741,9 @@ async def process_referral_withdrawal_amount(message: Message):
         from database import get_user
         user = get_user(user_id)
         if not user:
-            await message.answer("Пользователь не найден")
+            error_msg = await message.answer("Пользователь не найден")
+            # Сохраняем ID активного сообщения
+            active_user_messages[user_id] = error_msg.message_id
             return
 
         referral_balance = user.get('referral_balance', 0)
@@ -740,13 +826,15 @@ async def process_referral_withdrawal_amount(message: Message):
             pass
     except Exception as e:
         print(f"Ошибка при обработке суммы вывода: {e}")
-        await message.answer(
+        error_msg = await message.answer(
             "❌ Произошла ошибка при обработке запроса. Попробуйте позже.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(
                     text="👥 Реферальная программа", callback_data="referral")]
             ])
         )
+        # Сохраняем ID активного сообщения
+        active_user_messages[user_id] = error_msg.message_id
 
 
 @error_handler
@@ -755,7 +843,9 @@ async def show_clean_profile_menu_from_message(message: Message):
     from messages import get_profile_text, get_subscription_info_text
     user = get_user(message.from_user.id)
     if not user:
-        await message.answer("Сначала запустите бота командой /start")
+        error_msg = await message.answer("Сначала запустите бота командой /start")
+        # Сохраняем ID активного сообщения
+        active_user_messages[message.from_user.id] = error_msg.message_id
         return
 
     try:
@@ -789,9 +879,14 @@ async def show_clean_profile_menu_from_message(message: Message):
         message_history[message.chat.id]['bot_msgs'].append(msg)
         last_bot_messages[message.chat.id] = msg
 
+        # Сохраняем ID активного сообщения
+        active_user_messages[message.from_user.id] = msg.message_id
+
     except Exception as e:
         print(f"Ошибка при показе профиля: {e}")
-        await message.answer(full_text, reply_markup=keyboard)
+        msg = await message.answer(full_text, reply_markup=keyboard)
+        # Сохраняем ID активного сообщения
+        active_user_messages[message.from_user.id] = msg.message_id
 
 __all__ = ['get_profile_keyboard', 'show_referral_program', 'handle_exchange_referral_balance',
            'show_clean_profile_menu', 'show_profile', 'deposit_balance', 'process_deposit_amount',
